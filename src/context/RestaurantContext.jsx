@@ -9,7 +9,7 @@ export const useRestaurant = () => useContext(RestaurantContext);
 const generateId = () => '#' + Math.floor(1000 + Math.random() * 9000);
 
 export function RestaurantProvider({ children }) {
-  const [userRole, setUserRole] = useState(null); // 'admin', 'kitchen', 'waiter'
+  const [userRole, setUserRole] = useState(() => localStorage.getItem('restodash_role')); // 'admin', 'kitchen', 'waiter'
   const [authUser, setAuthUser] = useState(null);
   const [tables, setTables] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -64,12 +64,39 @@ export function RestaurantProvider({ children }) {
   useEffect(() => {
     // Local Auth Session setup
     const savedUser = localStorage.getItem('restodash_user');
-    if (savedUser) {
-      setAuthUser(JSON.parse(savedUser));
-    }
+    if (savedUser) setAuthUser(JSON.parse(savedUser));
+
+    const savedRole = localStorage.getItem('restodash_role');
+    if (savedRole) setUserRole(savedRole);
+
+    const syncAuthSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      const sessionUser = data?.session?.user ?? null;
+
+      if (sessionUser) {
+        localStorage.setItem('restodash_user', JSON.stringify(sessionUser));
+        setAuthUser(sessionUser);
+      } else {
+        localStorage.removeItem('restodash_user');
+        setAuthUser(null);
+      }
+    };
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchInitialData();
+    syncAuthSession();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        localStorage.setItem('restodash_user', JSON.stringify(session.user));
+        setAuthUser(session.user);
+      } else {
+        localStorage.removeItem('restodash_user');
+        localStorage.removeItem('restodash_role');
+        setAuthUser(null);
+        setUserRole(null);
+      }
+    });
 
     // Subscribe to realtime changes
     const tablesSubscription = supabase
@@ -97,6 +124,7 @@ export function RestaurantProvider({ children }) {
       supabase.removeChannel(tablesSubscription);
       supabase.removeChannel(ordersSubscription);
       supabase.removeChannel(messagesSubscription);
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
@@ -259,30 +287,58 @@ export function RestaurantProvider({ children }) {
 
   const login = (role) => {
     setUserRole(role);
+    localStorage.setItem('restodash_role', role);
   };
 
   const logout = () => {
     setUserRole(null);
+    localStorage.removeItem('restodash_role');
   };
 
   const loginWithEmail = async (email, password) => {
-    // Mock local authentication
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (password === 'admin123') {
-          const userObj = { email };
-          localStorage.setItem('restodash_user', JSON.stringify(userObj));
-          setAuthUser(userObj);
-          resolve(userObj);
-        } else {
-          reject(new Error("Invalid login credentials. Did you use 'admin123'?"));
-        }
-      }, 500); // simulate tiny network delay
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) throw error;
+
+    const user = data?.user ?? data?.session?.user;
+    if (user) {
+      localStorage.setItem('restodash_user', JSON.stringify(user));
+      setAuthUser(user);
+    }
+
+    return user;
+  };
+
+  const signUpWithEmail = async (email, password, displayName = '') => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: displayName ? { display_name: displayName } : undefined,
+      },
     });
+
+    if (error) throw error;
+
+    const user = data?.user ?? data?.session?.user;
+    if (user) {
+      localStorage.setItem('restodash_user', JSON.stringify(user));
+      setAuthUser(user);
+    }
+
+    return data;
+  };
+
+  const requestPasswordReset = async (email) => {
+    const redirectTo = `${window.location.origin}${import.meta.env.BASE_URL}login`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) throw error;
   };
 
   const logoutAuth = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('restodash_user');
+    localStorage.removeItem('restodash_role');
     setAuthUser(null);
     setUserRole(null);
   };
@@ -293,6 +349,8 @@ export function RestaurantProvider({ children }) {
     login,
     logout,
     loginWithEmail,
+    signUpWithEmail,
+    requestPasswordReset,
     logoutAuth,
     tables,
     orders,

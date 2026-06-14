@@ -1,14 +1,17 @@
 import { Link } from 'react-router-dom';
 import { ChefHat, TrendingUp, Smartphone, ArrowRight, Star, Users, UtensilsCrossed } from 'lucide-react';
 
+const logoSrc = `${import.meta.env.BASE_URL}logo.png`;
+const logoTextSrc = `${import.meta.env.BASE_URL}logo-text.png`;
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-transparent font-sans">
       {/* Navigation */}
       <nav className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="RestoDash Logo" className="h-12 w-12 object-contain drop-shadow-md" />
-          <img src="/logo-text.png" alt="RestoDash" className="h-7 object-contain drop-shadow-sm" />
+          <img src={logoSrc} alt="RestoDash Logo" className="h-12 w-12 object-contain drop-shadow-md" />
+          <img src={logoTextSrc} alt="RestoDash" className="h-7 object-contain drop-shadow-sm" />
         </div>
         <div className="hidden md:flex items-center gap-8 font-bold text-slate-700">
           <a href="#features" className="hover:text-indigo-600 transition-colors">Features</a>
@@ -44,8 +47,8 @@ export default function LandingPage() {
         <div className="mt-24 relative rounded-[2rem] border border-white/60 bg-white/40 p-4 shadow-2xl mx-auto max-w-5xl overflow-hidden aspect-video backdrop-blur-md group cursor-pointer hover:shadow-indigo-500/20 transition-all">
           <img src="https://images.unsplash.com/photo-1555396273-367ea4eb4db5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80" alt="Restaurant interior" className="absolute inset-0 w-full h-full object-cover opacity-20 blur-[1px] group-hover:scale-105 transition-transform duration-700" />
           <div className="absolute inset-6 bg-white/80 backdrop-blur-xl rounded-3xl border border-white/60 shadow-2xl flex flex-col items-center justify-center p-8">
-            <img src="/logo.png" alt="RestoDash Logo" className="w-24 h-24 object-contain drop-shadow-md mb-6" />
-            <img src="/logo-text.png" alt="RestoDash" className="h-10 object-contain drop-shadow-sm mb-4" />
+            <img src={logoSrc} alt="RestoDash Logo" className="w-24 h-24 object-contain drop-shadow-md mb-6" />
+            <img src={logoTextSrc} alt="RestoDash" className="h-10 object-contain drop-shadow-sm mb-4" />
             <p className="text-slate-600 font-bold text-xl">Interactive Dashboard Preview</p>
           </div>
         </div>
@@ -114,8 +117,8 @@ export default function LandingPage() {
             <h2 className="text-4xl md:text-5xl font-black flex flex-col items-center gap-6">
               How
               <div className="flex items-center">
-                <img src="/logo.png" alt="" className="w-13 h-10 brightness-0 invert drop-shadow-md" />
-                <img src="/logo-text.png" alt="RestoDash" className="h-7 ml-2 brightness-0 invert drop-shadow-sm" />
+                <img src={logoSrc} alt="" className="w-13 h-10 brightness-0 invert drop-shadow-md" />
+                <img src={logoTextSrc} alt="RestoDash" className="h-7 ml-2 brightness-0 invert drop-shadow-sm" />
               </div>
               Works
             </h2>
@@ -162,8 +165,8 @@ export default function LandingPage() {
       <footer className="py-12 border-t border-white/20 px-6 bg-slate-900/95 backdrop-blur-2xl text-white shadow-inner relative z-30">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="RestoDash Logo" className="w-10 h-10 object-contain brightness-0 invert" />
-            <img src="/logo-text.png" alt="RestoDash" className="h-6 object-contain brightness-0 invert" />
+            <img src={logoSrc} alt="RestoDash Logo" className="w-10 h-10 object-contain brightness-0 invert" />
+            <img src={logoTextSrc} alt="RestoDash" className="h-6 object-contain brightness-0 invert" />
           </div>
           <p className="text-slate-400 font-bold text-sm tracking-wide">© 2026 RestoDash Inc. All rights reserved.</p>
         </div>

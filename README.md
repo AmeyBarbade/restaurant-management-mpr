@@ -63,7 +63,13 @@ RestoDash uses a rigorous status mapping state machine:
    ```
    *Note: Database architecture assumes `orders`, `tables`, and `messages` tables are strictly mapped and subscribe-ready.*
 
-3. Spin up the development server:
+3. In Supabase, enable email/password auth and set these redirect URLs:
+   - Local dev: `http://localhost:5173/restaurant-management-mpr/login`
+   - GitHub Pages: `https://ameybarbade.github.io/restaurant-management-mpr/login`
+
+4. If you want new users to sign up from the app, keep email confirmations on or off as you prefer. The login page now supports sign in, create account, and password reset.
+
+5. Spin up the development server:
    ```bash
    npm run dev
    ```

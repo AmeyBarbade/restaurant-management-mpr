@@ -2,6 +2,9 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users, ChefHat, UtensilsCrossed, LogOut } from 'lucide-react';
 import { useRestaurant } from '../../context/RestaurantContext';
 
+const logoSrc = `${import.meta.env.BASE_URL}logo.png`;
+const logoTextSrc = `${import.meta.env.BASE_URL}logo-text.png`;
+
 export default function Sidebar() {
   const { userRole, logout } = useRestaurant();
   const navigate = useNavigate();
@@ -24,8 +27,8 @@ export default function Sidebar() {
     <div className="flex flex-col w-64 bg-white/80 backdrop-blur-md border-r border-slate-200/50 min-h-screen">
       <div className="flex items-center justify-center pt-8 pb-6 border-b border-slate-200/50 px-4">
         <div className="flex flex-col sm:flex-row items-center gap-2">
-          <img src="/logo.png" alt="RestoDash Logo" className="w-12 h-12 object-contain drop-shadow-md" />
-          <img src="/logo-text.png" alt="RestoDash" className="h-6 object-contain drop-shadow-sm hidden md:block" />
+          <img src={logoSrc} alt="RestoDash Logo" className="w-12 h-12 object-contain drop-shadow-md" />
+          <img src={logoTextSrc} alt="RestoDash" className="h-6 object-contain drop-shadow-sm hidden md:block" />
         </div>
       </div>
 
