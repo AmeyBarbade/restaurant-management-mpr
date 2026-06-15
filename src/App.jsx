@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -6,8 +7,20 @@ import AdminPage from './pages/AdminPage';
 import KDSPage from './pages/KDSPage';
 import WaiterPage from './pages/WaiterPage';
 import ProtectedRoute from './components/layout/ProtectedRoute';
-import { RestaurantProvider } from './context/RestaurantContext';
+import { RestaurantProvider, useRestaurant } from './context/RestaurantContext';
 import DynamicBackground from './components/layout/DynamicBackground';
+
+function DemoEntry() {
+  const { login } = useRestaurant();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    login('admin');
+    navigate('/admin', { replace: true });
+  }, [login, navigate]);
+
+  return <div className="p-8 text-slate-700 font-semibold">Loading demo...</div>;
+}
 
 function App() {
   return (
@@ -17,6 +30,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
+          <Route path="/demo" element={<DemoEntry />} />
           <Route path="/login" element={<LoginPage />} />
 
           {/* Internal Dashboard Routes */}

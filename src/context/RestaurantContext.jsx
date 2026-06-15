@@ -1,5 +1,5 @@
 import { createContext, useState, useEffect, useContext } from 'react';
-import { supabase } from '../lib/supabase';
+import { demoBroadcastChannel, isDemoMode, supabase } from '../lib/supabase';
 
 const RestaurantContext = createContext();
 
@@ -15,6 +15,53 @@ export function RestaurantProvider({ children }) {
   const [orders, setOrders] = useState([]);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const loadDemoSnapshot = () => {
+    try {
+      const snapshot = localStorage.getItem('restodash_demo_db');
+      return snapshot ? JSON.parse(snapshot) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const syncFromDemoSnapshot = () => {
+    const snapshot = loadDemoSnapshot();
+    if (!snapshot) return;
+
+    if (snapshot.tables) {
+      setTables(snapshot.tables.map(table => ({ ...table, currentOrder: table.currentorder })));
+    }
+    if (snapshot.orders) {
+      setOrders(snapshot.orders.map(order => ({ ...order, tableId: order.tableid })));
+    }
+    if (snapshot.messages) {
+      setMessages(snapshot.messages);
+    }
+    if (snapshot.authUser) {
+      setAuthUser(snapshot.authUser);
+    }
+  };
+
+  const syncDemoTable = (tableId, updates) => {
+    setTables(prev => prev.map(table => (table.id === tableId ? { ...table, ...updates } : table)));
+  };
+
+  const syncDemoOrder = (orderId, updates) => {
+    setOrders(prev => prev.map(order => (order.id === orderId ? { ...order, ...updates } : order)));
+  };
+
+  const removeDemoOrder = (orderId) => {
+    setOrders(prev => prev.filter(order => order.id !== orderId));
+  };
+
+  const removeDemoTable = (tableId) => {
+    setTables(prev => prev.filter(table => table.id !== tableId));
+  };
+
+  const addDemoMessage = (message) => {
+    setMessages(prev => [...prev, message]);
+  };
 
   const handleTableChange = (payload) => {
     const formattedTable = { ...payload.new, currentOrder: payload.new.currentorder };
@@ -98,6 +145,29 @@ export function RestaurantProvider({ children }) {
       }
     });
 
+    const handleStorageChange = (event) => {
+      if (event.key === 'restodash_demo_db' && isDemoMode) {
+        syncFromDemoSnapshot();
+      }
+      if (event.key === 'restodash_demo_user' && isDemoMode) {
+        syncFromDemoSnapshot();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    let demoChannel = null;
+    const handleDemoBroadcast = (event) => {
+      if (event.data?.type === 'demo-state-updated') {
+        syncFromDemoSnapshot();
+      }
+    };
+
+    if (isDemoMode && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      demoChannel = new BroadcastChannel(demoBroadcastChannel);
+      demoChannel.addEventListener('message', handleDemoBroadcast);
+    }
+
     // Subscribe to realtime changes
     const tablesSubscription = supabase
       .channel('tables-channel')
@@ -125,6 +195,11 @@ export function RestaurantProvider({ children }) {
       supabase.removeChannel(ordersSubscription);
       supabase.removeChannel(messagesSubscription);
       authListener.subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
+      if (demoChannel) {
+        demoChannel.removeEventListener('message', handleDemoBroadcast);
+        demoChannel.close();
+      }
     };
   }, []);
 
@@ -167,6 +242,13 @@ export function RestaurantProvider({ children }) {
       return;
     }
 
+    if (isDemoMode) {
+      setOrders(prev => [{ ...newOrder, tableId }, ...prev]);
+      syncDemoTable(tableId, { status: 'ordered', currentOrder: newOrderId });
+      await supabase.from('tables').update({ status: 'ordered', currentorder: newOrderId }).eq('id', tableId);
+      return;
+    }
+
     // Update table status in Supabase
     await supabase.from('tables').update({ status: 'ordered', currentorder: newOrderId }).eq('id', tableId);
   };
@@ -198,6 +280,12 @@ export function RestaurantProvider({ children }) {
     const { error: orderError } = await supabase.from('orders').insert([newOrder]);
     if (orderError) {
       console.error("Error placing external order", orderError);
+      return;
+    }
+
+    if (isDemoMode) {
+      setTables(prev => [...prev, { id: orderType, capacity: 1, status: 'ordered', currentOrder: newOrderId }]);
+      setOrders(prev => [{ ...newOrder, tableId: orderType }, ...prev]);
     }
   };
 
@@ -207,6 +295,10 @@ export function RestaurantProvider({ children }) {
     if(error) {
        console.error("Error updating order", error);
        return;
+    }
+
+    if (isDemoMode) {
+      syncDemoOrder(orderId, { status: newStatus, ...extra });
     }
 
     // Auto-update table status based on order status
@@ -222,7 +314,11 @@ export function RestaurantProvider({ children }) {
       updateTableStatus(order.tableId, 'paying'); // ready for bill now
     } else if (newStatus === 'paid') {
       if (order.tableId.startsWith('Takeaway') || order.tableId.startsWith('Online')) {
-        supabase.from('tables').delete().eq('id', order.tableId).then();
+        if (isDemoMode) {
+          removeDemoTable(order.tableId);
+        } else {
+          supabase.from('tables').delete().eq('id', order.tableId).then();
+        }
       } else {
         updateTableStatus(order.tableId, 'free', null);
       }
@@ -238,6 +334,11 @@ export function RestaurantProvider({ children }) {
     const { error } = await supabase.from('tables').update(updates).eq('id', tableId);
     if (error) {
        console.error("Error updating table", error);
+       return;
+    }
+
+    if (isDemoMode) {
+      syncDemoTable(tableId, currentOrder !== undefined ? { status, currentOrder } : { status });
     }
   };
 
@@ -253,10 +354,18 @@ export function RestaurantProvider({ children }) {
        return;
     }
 
+    if (isDemoMode) {
+      syncDemoOrder(orderId, { status: 'cancelled' });
+    }
+
     const order = orders.find(o => o.id === orderId);
     if (order) {
       if (order.tableId.startsWith('Takeaway') || order.tableId.startsWith('Online')) {
-        supabase.from('tables').delete().eq('id', order.tableId).then();
+        if (isDemoMode) {
+          removeDemoTable(order.tableId);
+        } else {
+          supabase.from('tables').delete().eq('id', order.tableId).then();
+        }
       } else {
         updateTableStatus(order.tableId, 'free', null);
       }
@@ -272,6 +381,10 @@ export function RestaurantProvider({ children }) {
       return;
     }
 
+    if (isDemoMode) {
+      syncDemoOrder(orderId, { items: newItems, total, status: 'buffer', buffer_ends_at: Date.now() + 10000 });
+    }
+
     const order = orders.find(o => o.id === orderId);
     if (order) {
       updateTableStatus(order.tableId, 'ordered', order.id);
@@ -282,6 +395,16 @@ export function RestaurantProvider({ children }) {
       const { error } = await supabase.from('messages').insert([{ sender, content }]);
       if (error) {
           console.error("Error sending message", error);
+          return;
+      }
+
+      if (isDemoMode) {
+        addDemoMessage({
+          id: `demo-${Date.now()}`,
+          sender,
+          content,
+          created_at: new Date().toISOString(),
+        });
       }
   };
 

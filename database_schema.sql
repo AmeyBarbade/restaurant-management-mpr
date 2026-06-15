@@ -23,6 +23,8 @@ CREATE TABLE public.orders (
   id TEXT PRIMARY KEY,
   tableId TEXT NOT NULL REFERENCES public.tables(id),
   status TEXT NOT NULL,
+  buffer_ends_at BIGINT,
+  cooking_ends_at BIGINT,
   time TEXT NOT NULL,
   items JSONB NOT NULL,
   total NUMERIC(10, 2) NOT NULL,

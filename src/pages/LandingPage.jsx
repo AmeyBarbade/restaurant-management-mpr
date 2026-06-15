@@ -38,7 +38,7 @@ export default function LandingPage() {
           <Link to="/login" className="w-full sm:w-auto px-10 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-lg hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/30 hover:shadow-indigo-600/50 hover:-translate-y-1 flex items-center justify-center gap-2">
             Start Free Trial <ArrowRight className="w-6 h-6" />
           </Link>
-          <Link to="/login" className="w-full sm:w-auto px-10 py-4 bg-white/90 backdrop-blur-md text-slate-900 border-2 border-white/50 rounded-2xl font-bold text-lg hover:bg-white transition-all shadow-lg hover:-translate-y-1">
+          <Link to="/demo" className="w-full sm:w-auto px-10 py-4 bg-white/90 backdrop-blur-md text-slate-900 border-2 border-white/50 rounded-2xl font-bold text-lg hover:bg-white transition-all shadow-lg hover:-translate-y-1">
             View Live Demo
           </Link>
         </div>

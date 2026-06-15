@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { ChefHat, ArrowRight, Shield, UtensilsCrossed, Utensils, Mail, Lock, AlertCircle, LogOut } from 'lucide-react';
 import { useRestaurant } from '../context/RestaurantContext';
 
@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [role, setRole] = useState('admin');
   const [authMode, setAuthMode] = useState('signin');
   const navigate = useNavigate();
+  const location = useLocation();
   const { authUser, login, loginWithEmail, signUpWithEmail, requestPasswordReset, logoutAuth } = useRestaurant();
 
   // Auth Form State
@@ -20,6 +21,29 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const isDemo = searchParams.get('demo') === '1';
+
+    if (isDemo && !authUser) {
+      const runDemo = async () => {
+        setIsLoading(true);
+        setErrorMsg('');
+        try {
+          await login('admin');
+          await loginWithEmail('demo@restodash.com', 'demo');
+          navigate('/admin', { replace: true });
+        } catch (error) {
+          setErrorMsg(error.message || 'Unable to start demo mode');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      runDemo();
+    }
+  }, [authUser, location.search, login, loginWithEmail, navigate]);
 
   const handleRoleLogin = (e) => {
     e.preventDefault();
