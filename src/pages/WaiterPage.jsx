@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Users, Coffee, ChevronRight, Plus, X, Pencil, Ban, MessageSquare } from 'lucide-react';
 import { useRestaurant } from '../context/RestaurantContext';
 
+// BUG FIX 2: same helper as KDSPage — normalise timestamp to Unix-ms so
+// comparisons work whether the value is a number (demo) or ISO string (Supabase).
+const tsToMs = (ts) => {
+  if (!ts) return 0;
+  return typeof ts === 'number' ? ts : new Date(ts).getTime();
+};
+
 export default function WaiterPage({ embedded = false }) {
   const { tables, orders, messages, getMenuItems, placeOrder, calculateTableBill, cancelOrder, updateOrderItems, updateOrderStatus } = useRestaurant();
   const [activeTableId, setActiveTableId] = useState(null);
@@ -31,33 +38,35 @@ export default function WaiterPage({ embedded = false }) {
 
   const getStatusStyle = (status) => {
     switch (status) {
-      case 'free': return 'bg-white/80 backdrop-blur-md border-white/50 hover:border-teal-500 shadow-sm';
+      case 'free':     return 'bg-white/80 backdrop-blur-md border-white/50 hover:border-teal-500 shadow-sm';
       case 'occupied': return 'bg-amber-50/80 backdrop-blur-md border-amber-300 shadow-sm';
-      case 'cooking': return 'bg-violet-50/80 backdrop-blur-md border-violet-300 shadow-sm';
-      case 'ordered': return 'bg-indigo-50/80 backdrop-blur-md border-indigo-300 shadow-sm';
-      case 'paying': return 'bg-emerald-50/80 backdrop-blur-md border-emerald-300 shadow-sm';
-      default: return 'bg-white/80 backdrop-blur-md border-white/50';
+      case 'cooking':  return 'bg-violet-50/80 backdrop-blur-md border-violet-300 shadow-sm';
+      case 'ordered':  return 'bg-indigo-50/80 backdrop-blur-md border-indigo-300 shadow-sm';
+      case 'paying':   return 'bg-emerald-50/80 backdrop-blur-md border-emerald-300 shadow-sm';
+      default:         return 'bg-white/80 backdrop-blur-md border-white/50';
     }
   };
 
   const getStatusText = (status) => {
     switch (status) {
-      case 'free': return 'Available';
+      case 'free':     return 'Available';
       case 'occupied': return 'Seated';
-      case 'buffer': return 'Grace Period';
-      case 'pending': return 'Sent to Kitchen';
-      case 'ordered': return 'Waiting for Food';
-      case 'cooking': return 'Food is Cooking';
-      case 'ready': return 'Ready to Serve';
-      case 'served': return 'Served - Eating';
-      case 'paying': return 'Bill Requested / Paying';
-      default: return status;
+      case 'buffer':   return 'Grace Period';
+      case 'pending':  return 'Sent to Kitchen';
+      case 'ordered':  return 'Waiting for Food';
+      case 'cooking':  return 'Food is Cooking';
+      case 'ready':    return 'Ready to Serve';
+      case 'served':   return 'Served - Eating';
+      case 'paying':   return 'Bill Requested / Paying';
+      default:         return status;
     }
   };
 
-  const formatTimeRemaining = (targetTimeMs) => {
-    if (!targetTimeMs || targetTimeMs <= currentTime) return "00:00";
-    let diff = Math.floor((targetTimeMs - currentTime) / 1000);
+  // BUG FIX 2: uses tsToMs so countdown works with both number and string timestamps
+  const formatTimeRemaining = (targetTimestamp) => {
+    const targetMs = tsToMs(targetTimestamp);
+    if (!targetMs || targetMs <= currentTime) return '00:00';
+    const diff = Math.floor((targetMs - currentTime) / 1000);
     const m = Math.floor(diff / 60);
     const s = diff % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
@@ -66,7 +75,7 @@ export default function WaiterPage({ embedded = false }) {
   const handleTableClick = (id) => {
     setActiveTableId(id);
     setIsEditing(false);
-    setCart([]); // reset cart when switching tables
+    setCart([]);
   };
 
   const activeTable = tables.find(t => t.id === activeTableId);
@@ -85,7 +94,7 @@ export default function WaiterPage({ embedded = false }) {
   const removeFromCart = (id) => {
     setCart(prev => prev.filter(i => i.id !== id));
   };
-  
+
   const updateItemNote = (id, note) => {
     setCart(prev => prev.map(i => i.id === id ? { ...i, notes: note } : i));
   };
@@ -134,7 +143,7 @@ export default function WaiterPage({ embedded = false }) {
           </div>
 
           <div className="flex items-center gap-4 relative">
-             <button 
+            <button
               onClick={() => {
                 setShowMessages(!showMessages);
                 if (!showMessages) setUnreadCount(0);
@@ -148,7 +157,7 @@ export default function WaiterPage({ embedded = false }) {
                 </span>
               )}
             </button>
-            
+
             {showMessages && (
               <div className="absolute top-12 left-0 md:left-auto md:right-0 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-[100] overflow-hidden">
                 <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-slate-50">
@@ -179,14 +188,11 @@ export default function WaiterPage({ embedded = false }) {
                 </div>
               </div>
             )}
-            
-            {/* Search removed as requested */}
           </div>
         </div>
 
         <div className="mb-4">
-           {/* Removed unnecessary tabs */}
-           <h2 className="text-lg font-bold text-slate-800">All Tables</h2>
+          <h2 className="text-lg font-bold text-slate-800">All Tables</h2>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 overflow-y-auto pb-4 pr-2">
@@ -194,8 +200,9 @@ export default function WaiterPage({ embedded = false }) {
             <button
               key={table.id}
               onClick={() => handleTableClick(table.id)}
-              className={`p-4 rounded-xl border text-left flex flex-col justify-between h-40 transition-all active:scale-[0.98] relative ${getStatusStyle(table.status)} ${activeTableId === table.id ? 'ring-2 ring-inset ring-teal-500 border-transparent shadow-md' : ''
-                }`}
+              className={`p-4 rounded-xl border text-left flex flex-col justify-between h-40 transition-all active:scale-[0.98] relative ${getStatusStyle(table.status)} ${
+                activeTableId === table.id ? 'ring-2 ring-inset ring-teal-500 border-transparent shadow-md' : ''
+              }`}
             >
               <div className="flex justify-between items-start">
                 <span className={`font-bold text-xl ${table.status !== 'free' ? 'text-slate-900' : 'text-slate-700'}`}>
@@ -213,11 +220,12 @@ export default function WaiterPage({ embedded = false }) {
                     ₹{calculateTableBill(table.id).toFixed(2)}
                   </div>
                 )}
-                <div className={`text-xs font-bold uppercase tracking-wider mt-1 ${table.status === 'free' ? 'text-slate-400' :
+                <div className={`text-xs font-bold uppercase tracking-wider mt-1 ${
+                  table.status === 'free'     ? 'text-slate-400' :
                   table.status === 'occupied' ? 'text-amber-600' :
-                    table.status === 'cooking' ? 'text-violet-600' :
-                      table.status === 'ordered' ? 'text-indigo-600' : 'text-emerald-600'
-                  }`}>
+                  table.status === 'cooking'  ? 'text-violet-600' :
+                  table.status === 'ordered'  ? 'text-indigo-600' : 'text-emerald-600'
+                }`}>
                   {getStatusText(table.status)}
                 </div>
               </div>
@@ -239,8 +247,9 @@ export default function WaiterPage({ embedded = false }) {
             <div className="p-5 border-b border-white/50 bg-white/60 flex items-center justify-between shrink-0">
               <div>
                 <h2 className="font-bold text-xl text-slate-900">Table {activeTable.id.replace('T-', '')}</h2>
-                <span className={`text-xs font-bold uppercase tracking-wider mt-1 ${activeTable.status === 'free' ? 'text-slate-500' : 'text-teal-600'
-                  }`}>
+                <span className={`text-xs font-bold uppercase tracking-wider mt-1 ${
+                  activeTable.status === 'free' ? 'text-slate-500' : 'text-teal-600'
+                }`}>
                   {getStatusText(activeTable.status)}
                 </span>
               </div>
@@ -252,7 +261,6 @@ export default function WaiterPage({ embedded = false }) {
             {!activeOrder || isEditing ? (
               <>
                 <div className="flex-1 overflow-y-auto bg-slate-50/30 p-4 space-y-6">
-                  {/* Quick Menu Selection */}
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 mb-3 uppercase tracking-wider">
                       {isEditing ? 'Add Items to Order' : 'Quick Menu'}
@@ -303,18 +311,17 @@ export default function WaiterPage({ embedded = false }) {
                             </div>
                           </div>
                           <div className="flex gap-2">
-                            <input 
-                              type="text" 
+                            <input
+                              type="text"
                               placeholder="Add special request... (e.g. less spicy)"
                               className="flex-1 text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400 transition-colors"
                               value={item.notes || ''}
                               onChange={(e) => updateItemNote(item.id, e.target.value)}
                             />
                           </div>
-                          {/* Quick note buttons */}
                           <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
-                            {["Less Spicy", "Extra Cheese", "No Onions", "Extra Spicy"].map(quickNote => (
-                              <button 
+                            {['Less Spicy', 'Extra Cheese', 'No Onions', 'Extra Spicy'].map(quickNote => (
+                              <button
                                 key={quickNote}
                                 onClick={() => updateItemNote(item.id, item.notes ? `${item.notes}, ${quickNote}` : quickNote)}
                                 className="shrink-0 text-[10px] font-bold px-2 py-1 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-teal-400 hover:text-teal-600 transition-colors whitespace-nowrap"
@@ -339,10 +346,11 @@ export default function WaiterPage({ embedded = false }) {
                       <button
                         onClick={handleUpdateOrder}
                         disabled={cart.length === 0}
-                        className={`flex-1 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${cart.length > 0
-                          ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-md shadow-teal-600/20'
-                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                          }`}
+                        className={`flex-1 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                          cart.length > 0
+                            ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-md shadow-teal-600/20'
+                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        }`}
                       >
                         Update & Send <ChevronRight className="w-5 h-5" />
                       </button>
@@ -351,10 +359,11 @@ export default function WaiterPage({ embedded = false }) {
                     <button
                       onClick={handlePlaceOrder}
                       disabled={cart.length === 0}
-                      className={`w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shrink-0 mt-2 ${cart.length > 0
-                        ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-md shadow-teal-600/20'
-                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                        }`}
+                      className={`w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shrink-0 mt-2 ${
+                        cart.length > 0
+                          ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-md shadow-teal-600/20'
+                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      }`}
                     >
                       Send to Kitchen <ChevronRight className="w-5 h-5" />
                     </button>
@@ -368,32 +377,36 @@ export default function WaiterPage({ embedded = false }) {
                   <div className="mb-4 flex items-center justify-between shrink-0">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Order {activeOrder.id}</h3>
                     <div className="flex flex-col items-end gap-1">
-                       <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
-                           activeOrder.status === 'buffer' ? 'bg-slate-200 text-slate-600' :
-                           activeOrder.status === 'pending' ? 'bg-rose-100 text-rose-700' :
-                           activeOrder.status === 'cooking' ? 'bg-violet-100 text-violet-700' :
-                           activeOrder.status === 'ready' ? 'bg-emerald-100 text-emerald-700' :
-                           activeOrder.status === 'served' ? 'bg-teal-100 text-teal-700' :
-                           'bg-slate-100 text-slate-700'
-                         }`}>
-                         {getStatusText(activeOrder.status).toUpperCase()}
-                       </span>
-                       
-                       {activeOrder.status === 'buffer' && (
-                         <span className="text-xs font-bold text-slate-500">
-                           ⏳ Grace Time: {formatTimeRemaining(activeOrder.buffer_ends_at)}
-                         </span>
-                       )}
-                       
-                       {activeOrder.status === 'cooking' && (
-                         <span className={`text-xs font-bold ${activeOrder.cooking_ends_at <= currentTime ? 'text-rose-500 animate-pulse' : 'text-violet-600'}`}>
-                           Prep Timer: {formatTimeRemaining(activeOrder.cooking_ends_at)}
-                         </span>
-                       )}
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+                        activeOrder.status === 'buffer'  ? 'bg-slate-200 text-slate-600' :
+                        activeOrder.status === 'pending' ? 'bg-rose-100 text-rose-700' :
+                        activeOrder.status === 'cooking' ? 'bg-violet-100 text-violet-700' :
+                        activeOrder.status === 'ready'   ? 'bg-emerald-100 text-emerald-700' :
+                        activeOrder.status === 'served'  ? 'bg-teal-100 text-teal-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {getStatusText(activeOrder.status).toUpperCase()}
+                      </span>
+
+                      {activeOrder.status === 'buffer' && (
+                        <span className="text-xs font-bold text-slate-500">
+                          ⏳ Grace Time: {formatTimeRemaining(activeOrder.buffer_ends_at)}
+                        </span>
+                      )}
+
+                      {/* BUG FIX 2: use tsToMs for cooking_ends_at comparison */}
+                      {activeOrder.status === 'cooking' && (
+                        <span className={`text-xs font-bold ${
+                          tsToMs(activeOrder.cooking_ends_at) <= currentTime ? 'text-rose-500 animate-pulse' : 'text-violet-600'
+                        }`}>
+                          Prep Timer: {formatTimeRemaining(activeOrder.cooking_ends_at)}
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {activeOrder.status === 'cooking' && activeOrder.cooking_ends_at <= currentTime && (
+                  {/* BUG FIX 2: use tsToMs for the "almost done" banner */}
+                  {activeOrder.status === 'cooking' && tsToMs(activeOrder.cooking_ends_at) <= currentTime && (
                     <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg shadow-sm animate-pulse">
                       <p className="text-sm font-bold text-amber-700 text-center">
                         Almost done! Final confirmation pending from Kitchen.
@@ -402,7 +415,7 @@ export default function WaiterPage({ embedded = false }) {
                   )}
 
                   <div className="space-y-3 mb-6">
-                    {activeOrder.items.map((item, idx) => (
+                    {(activeOrder.items || []).map((item, idx) => (
                       <div key={idx} className="flex flex-col p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">

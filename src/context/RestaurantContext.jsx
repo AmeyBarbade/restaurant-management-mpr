@@ -9,7 +9,7 @@ export const useRestaurant = () => useContext(RestaurantContext);
 const generateId = () => '#' + Math.floor(1000 + Math.random() * 9000);
 
 export function RestaurantProvider({ children }) {
-  const [userRole, setUserRole] = useState(() => localStorage.getItem('restodash_role')); // 'admin', 'kitchen', 'waiter'
+  const [userRole, setUserRole] = useState(() => localStorage.getItem('restodash_role'));
   const [authUser, setAuthUser] = useState(null);
   const [tables, setTables] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -77,7 +77,8 @@ export function RestaurantProvider({ children }) {
   const handleOrderChange = (payload) => {
     const formattedOrder = { ...payload.new, tableId: payload.new.tableid };
     if (payload.eventType === 'INSERT') {
-      setOrders(prev => [formattedOrder, ...prev]);
+      // Avoid duplicate if optimistic update already added it
+      setOrders(prev => prev.some(o => o.id === formattedOrder.id) ? prev.map(o => o.id === formattedOrder.id ? formattedOrder : o) : [formattedOrder, ...prev]);
     } else if (payload.eventType === 'UPDATE') {
       setOrders(prev => prev.map(o => o.id === formattedOrder.id ? formattedOrder : o));
     } else if (payload.eventType === 'DELETE') {
@@ -85,31 +86,32 @@ export function RestaurantProvider({ children }) {
     }
   };
 
+  // BUG FIX 3: Wrapped in try/finally so setLoading(false) is ALWAYS called,
+  // even if a fetch throws. Previously a throw would leave the app stuck on
+  // "Loading..." forever.
   const fetchInitialData = async () => {
     setLoading(true);
-    
-    // Fetch tables
-    const { data: tablesData } = await supabase.from('tables').select('*');
-    if (tablesData) {
-      setTables(tablesData.map(t => ({ ...t, currentOrder: t.currentorder })));
-    }
-    
-    // Fetch orders
-    const { data: ordersData } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-    if (ordersData) {
-      setOrders(ordersData.map(o => ({ ...o, tableId: o.tableid })));
-    }
+    try {
+      const { data: tablesData } = await supabase.from('tables').select('*');
+      if (tablesData) {
+        setTables(tablesData.map(t => ({ ...t, currentOrder: t.currentorder })));
+      }
 
-    // Fetch messages
-    const { data: messagesData } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
-    if (messagesData) setMessages(messagesData);
+      const { data: ordersData } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+      if (ordersData) {
+        setOrders(ordersData.map(o => ({ ...o, tableId: o.tableid })));
+      }
 
-    setLoading(false);
+      const { data: messagesData } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
+      if (messagesData) setMessages(messagesData);
+    } catch (err) {
+      console.error('Error fetching initial data:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Initial fetch and subscription setup
   useEffect(() => {
-    // Local Auth Session setup
     const savedUser = localStorage.getItem('restodash_user');
     if (savedUser) setAuthUser(JSON.parse(savedUser));
 
@@ -168,7 +170,6 @@ export function RestaurantProvider({ children }) {
       demoChannel.addEventListener('message', handleDemoBroadcast);
     }
 
-    // Subscribe to realtime changes
     const tablesSubscription = supabase
       .channel('tables-channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, (payload) => {
@@ -203,8 +204,6 @@ export function RestaurantProvider({ children }) {
     };
   }, []);
 
-
-
   const getMenuItems = () => [
     { id: 1, category: 'Mains', name: 'Paneer Tikka', price: 350.00 },
     { id: 2, category: 'Mains', name: 'Butter Chicken', price: 450.00 },
@@ -221,54 +220,43 @@ export function RestaurantProvider({ children }) {
     { id: 13, category: 'Drinks', name: 'Cold Coffee', price: 150.00 },
   ];
 
+  // BUG FIX 1 (root cause): Removed the `if (isDemoMode)` gate.
+  // Previously, setOrders / syncDemoTable were ONLY called in demo mode,
+  // so in real-Supabase mode the KDS never saw the order unless Realtime
+  // happened to be working.  Now we always update local React state first
+  // (optimistic update), then persist to Supabase / demo storage.
   const placeOrder = async (tableId, items) => {
     const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const newOrderId = generateId();
-    
+
     const newOrder = {
       id: newOrderId,
-      tableid: tableId, // Supabase maps unquoted CamelCase to lowercase
+      tableid: tableId,
       status: 'buffer',
-      buffer_ends_at: Date.now() + 10000, // 2 minutes buffer
+      buffer_ends_at: Date.now() + 10000, // 10-second buffer window
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       items,
       total
     };
 
-    // Insert order to Supabase
+    // Immediately update local React state — KDS sees the order right away
+    setOrders(prev => [{ ...newOrder, tableId }, ...prev]);
+    syncDemoTable(tableId, { status: 'ordered', currentOrder: newOrderId });
+
+    // Persist to Supabase (real) or demo localStorage
     const { error: orderError } = await supabase.from('orders').insert([newOrder]);
-    if (orderError) {
-      console.error("Error placing order", orderError);
-      return;
-    }
+    if (orderError) console.error('Error placing order:', orderError);
 
-    if (isDemoMode) {
-      setOrders(prev => [{ ...newOrder, tableId }, ...prev]);
-      syncDemoTable(tableId, { status: 'ordered', currentOrder: newOrderId });
-      await supabase.from('tables').update({ status: 'ordered', currentorder: newOrderId }).eq('id', tableId);
-      return;
-    }
-
-    // Update table status in Supabase
     await supabase.from('tables').update({ status: 'ordered', currentorder: newOrderId }).eq('id', tableId);
   };
 
   const placeExternalOrder = async (orderType, items) => {
     const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const newOrderId = generateId();
-    
-    // Create pseudo-table to fulfill DB constraints
-    await supabase.from('tables').insert([{
-      id: orderType,
-      capacity: 1,
-      status: 'ordered',
-      currentorder: newOrderId
-    }]);
 
-    // orderType will be "Takeaway #1234" or "Online Order #1234"
     const newOrder = {
       id: newOrderId,
-      tableid: orderType, // Treating this virtual id as the tableId equivalent
+      tableid: orderType,
       status: 'buffer',
       buffer_ends_at: Date.now() + 10000,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -276,70 +264,53 @@ export function RestaurantProvider({ children }) {
       total
     };
 
-    // Insert order to Supabase
-    const { error: orderError } = await supabase.from('orders').insert([newOrder]);
-    if (orderError) {
-      console.error("Error placing external order", orderError);
-      return;
-    }
+    // BUG FIX 1 (same pattern): always update local state first
+    setTables(prev => [...prev, { id: orderType, capacity: 1, status: 'ordered', currentOrder: newOrderId }]);
+    setOrders(prev => [{ ...newOrder, tableId: orderType }, ...prev]);
 
-    if (isDemoMode) {
-      setTables(prev => [...prev, { id: orderType, capacity: 1, status: 'ordered', currentOrder: newOrderId }]);
-      setOrders(prev => [{ ...newOrder, tableId: orderType }, ...prev]);
-    }
+    await supabase.from('tables').insert([{ id: orderType, capacity: 1, status: 'ordered', currentorder: newOrderId }]);
+
+    const { error: orderError } = await supabase.from('orders').insert([newOrder]);
+    if (orderError) console.error('Error placing external order:', orderError);
   };
 
+  // BUG FIX 1 (same pattern): syncDemoOrder is now called unconditionally
   const updateOrderStatus = async (orderId, newStatus, extra = {}) => {
-    // Update order status in Supabase
+    // Immediately update local state
+    syncDemoOrder(orderId, { status: newStatus, ...extra });
+
+    // Persist
     const { error } = await supabase.from('orders').update({ status: newStatus, ...extra }).eq('id', orderId);
-    if(error) {
-       console.error("Error updating order", error);
-       return;
-    }
+    if (error) console.error('Error updating order:', error);
 
-    if (isDemoMode) {
-      syncDemoOrder(orderId, { status: newStatus, ...extra });
-    }
-
-    // Auto-update table status based on order status
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
     if (newStatus === 'cooking') {
       updateTableStatus(order.tableId, 'cooking');
-    } else if (newStatus === 'ready') {
-      // Table is still occupied but cooking is done
-      // You could update it to "ready" or just keep it "cooking" until served
     } else if (newStatus === 'served') {
-      updateTableStatus(order.tableId, 'paying'); // ready for bill now
+      updateTableStatus(order.tableId, 'paying');
     } else if (newStatus === 'paid') {
-      if (order.tableId.startsWith('Takeaway') || order.tableId.startsWith('Online')) {
-        if (isDemoMode) {
-          removeDemoTable(order.tableId);
-        } else {
-          supabase.from('tables').delete().eq('id', order.tableId).then();
-        }
+      if (order.tableId?.startsWith('Takeaway') || order.tableId?.startsWith('Online')) {
+        removeDemoTable(order.tableId);
+        if (!isDemoMode) supabase.from('tables').delete().eq('id', order.tableId).then();
       } else {
         updateTableStatus(order.tableId, 'free', null);
       }
     }
   };
 
+  // BUG FIX 1 (same pattern): syncDemoTable is now called unconditionally
   const updateTableStatus = async (tableId, status, currentOrder = undefined) => {
     const updates = { status };
-    if (currentOrder !== undefined) {
-      updates.currentorder = currentOrder; // Send as currentorder to match PostgreSQL
-    }
-    
-    const { error } = await supabase.from('tables').update(updates).eq('id', tableId);
-    if (error) {
-       console.error("Error updating table", error);
-       return;
-    }
+    if (currentOrder !== undefined) updates.currentorder = currentOrder;
 
-    if (isDemoMode) {
-      syncDemoTable(tableId, currentOrder !== undefined ? { status, currentOrder } : { status });
-    }
+    // Immediately update local state
+    syncDemoTable(tableId, currentOrder !== undefined ? { status, currentOrder } : { status });
+
+    // Persist
+    const { error } = await supabase.from('tables').update(updates).eq('id', tableId);
+    if (error) console.error('Error updating table:', error);
   };
 
   const calculateTableBill = (tableId) => {
@@ -347,65 +318,57 @@ export function RestaurantProvider({ children }) {
     return tableOrders.reduce((sum, order) => sum + order.total, 0);
   };
 
+  // BUG FIX 1 (same pattern): syncDemoOrder is now called unconditionally
   const cancelOrder = async (orderId) => {
-    const { error } = await supabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
-    if (error) {
-       console.error("Error cancelling order", error);
-       return;
-    }
+    // Immediately update local state
+    syncDemoOrder(orderId, { status: 'cancelled' });
 
-    if (isDemoMode) {
-      syncDemoOrder(orderId, { status: 'cancelled' });
-    }
+    // Persist
+    const { error } = await supabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
+    if (error) console.error('Error cancelling order:', error);
 
     const order = orders.find(o => o.id === orderId);
     if (order) {
-      if (order.tableId.startsWith('Takeaway') || order.tableId.startsWith('Online')) {
-        if (isDemoMode) {
-          removeDemoTable(order.tableId);
-        } else {
-          supabase.from('tables').delete().eq('id', order.tableId).then();
-        }
+      if (order.tableId?.startsWith('Takeaway') || order.tableId?.startsWith('Online')) {
+        removeDemoTable(order.tableId);
+        if (!isDemoMode) supabase.from('tables').delete().eq('id', order.tableId).then();
       } else {
         updateTableStatus(order.tableId, 'free', null);
       }
     }
   };
 
+  // BUG FIX 1 (same pattern): syncDemoOrder is now called unconditionally
   const updateOrderItems = async (orderId, newItems) => {
     const total = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    // When editing, reset buffer to a fresh 2 mins
-    const { error } = await supabase.from('orders').update({ items: newItems, total, status: 'buffer', buffer_ends_at: Date.now() + 10000 }).eq('id', orderId);
-    if (error) {
-      console.error("Error updating order items", error);
-      return;
-    }
+    const updates = { items: newItems, total, status: 'buffer', buffer_ends_at: Date.now() + 10000 };
 
-    if (isDemoMode) {
-      syncDemoOrder(orderId, { items: newItems, total, status: 'buffer', buffer_ends_at: Date.now() + 10000 });
-    }
+    // Immediately update local state
+    syncDemoOrder(orderId, updates);
+
+    // Persist
+    const { error } = await supabase.from('orders').update(updates).eq('id', orderId);
+    if (error) console.error('Error updating order items:', error);
 
     const order = orders.find(o => o.id === orderId);
-    if (order) {
-      updateTableStatus(order.tableId, 'ordered', order.id);
-    }
+    if (order) updateTableStatus(order.tableId, 'ordered', order.id);
   };
-  
-  const sendMessage = async (sender, content) => {
-      const { error } = await supabase.from('messages').insert([{ sender, content }]);
-      if (error) {
-          console.error("Error sending message", error);
-          return;
-      }
 
-      if (isDemoMode) {
-        addDemoMessage({
-          id: `demo-${Date.now()}`,
-          sender,
-          content,
-          created_at: new Date().toISOString(),
-        });
-      }
+  // BUG FIX 4: addDemoMessage is now called unconditionally so the sender
+  // always sees their own message immediately, regardless of Supabase Realtime.
+  const sendMessage = async (sender, content) => {
+    // Immediately show the message to the sender
+    const tempMessage = {
+      id: `local-${Date.now()}`,
+      sender,
+      content,
+      created_at: new Date().toISOString(),
+    };
+    addDemoMessage(tempMessage);
+
+    // Persist (Supabase Realtime will distribute to other clients)
+    const { error } = await supabase.from('messages').insert([{ sender, content }]);
+    if (error) console.error('Error sending message:', error);
   };
 
   const login = (role) => {
@@ -420,7 +383,6 @@ export function RestaurantProvider({ children }) {
 
   const loginWithEmail = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
     if (error) throw error;
 
     const user = data?.user ?? data?.session?.user;
@@ -428,7 +390,6 @@ export function RestaurantProvider({ children }) {
       localStorage.setItem('restodash_user', JSON.stringify(user));
       setAuthUser(user);
     }
-
     return user;
   };
 
@@ -440,7 +401,6 @@ export function RestaurantProvider({ children }) {
         data: displayName ? { display_name: displayName } : undefined,
       },
     });
-
     if (error) throw error;
 
     const user = data?.user ?? data?.session?.user;
@@ -448,7 +408,6 @@ export function RestaurantProvider({ children }) {
       localStorage.setItem('restodash_user', JSON.stringify(user));
       setAuthUser(user);
     }
-
     return data;
   };
 
